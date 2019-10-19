@@ -1,0 +1,9 @@
+# Project exclude paths
+/cmake-build-debug/
+/cmake-build-debug/originalArray.txt
+/cmake-build-debug/sortedArray.txt
+
+/cmake-build-debug-remote/originalArray.txt
+/cmake-build-debug-remote/sortedArray.txt
+# Project exclude paths
+/cmake-build-debug-remote/
