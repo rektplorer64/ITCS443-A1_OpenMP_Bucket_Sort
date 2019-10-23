@@ -4,6 +4,7 @@
 #include <time.h>
 #include <sys/time.h>
 #include <stdint.h>
+#include <locale.h>
 
 /**
  * Merges two sub-arrays of dataArray[] into one such that
@@ -86,7 +87,7 @@ void mergeSort(int dataArray[], int positionLeft, int positionRight) {
 }
 
 /**
- * Generate random numbers into given array
+ * Generate random numbers between 0 and 9999 into given array
  *
  * @param array output array for the generated numbers
  * @param size  size of the array
@@ -95,7 +96,7 @@ void generateRandomNumberArray(int *array, int size) {
     srand(1432427398);
     for (int i = 0; i < size; i++) {
         // srand(time(NULL));
-        *(array + i) = rand();
+        *(array + i) = rand() % 10000;
         // printf("%d\n", array[i]);
     }
 }
@@ -106,10 +107,10 @@ void generateRandomNumberArray(int *array, int size) {
  * @param dataSize  the size of the data array
  * @return          the amount of time taken to sort the number
  */
-long parallelBucketSort(int dataSize) {
+long parallelBucketSort(int dataSize, int totalBucket) {
     // DEBUG: Initialize the timer
     struct timespec timeStampStop, timeStampStart;
-    int TOTAL_THREADS = 16;
+    int TOTAL_THREADS = totalBucket;
 
     // Allocate loop counters and data heap
     int i, j;
@@ -139,7 +140,7 @@ long parallelBucketSort(int dataSize) {
 
     // Find the Minimum value of the data in parallel
     int minimumElement = 99999999;
-    #pragma omp parallel for reduction(min:minimumElement) default(none) shared(DATA_SIZE, data) num_threads(TOTAL_THREADS)
+#pragma omp parallel for reduction(min:minimumElement) default(none) shared(DATA_SIZE, data) num_threads(TOTAL_THREADS)
     for (i = 0; i < DATA_SIZE; i++) {
         if (data[i] < minimumElement) {
             minimumElement = data[i];
@@ -148,7 +149,7 @@ long parallelBucketSort(int dataSize) {
 
     // Find the Maximum value of the data in parallel
     int maximumElement = -99999999;
-    #pragma omp parallel for reduction(max:maximumElement) default(none) shared(DATA_SIZE, data) num_threads(TOTAL_THREADS)
+#pragma omp parallel for reduction(max:maximumElement) default(none) shared(DATA_SIZE, data) num_threads(TOTAL_THREADS)
     for (i = 0; i < DATA_SIZE; i++) {
         if (data[i] > maximumElement) {
             maximumElement = data[i];
@@ -160,12 +161,12 @@ long parallelBucketSort(int dataSize) {
     // printf("Maximum Element = %d\n", maximumElement);
 
     // Enters the Main Parallel block with shared data array and thread data counter array
-    #pragma omp parallel default(none) private(i, j) shared(DATA_SIZE, data, threadDataCount, TOTAL_THREADS, minimumElement, maximumElement) num_threads(TOTAL_THREADS)
+#pragma omp parallel default(none) private(i, j) shared(DATA_SIZE, data, threadDataCount, TOTAL_THREADS, minimumElement, maximumElement) num_threads(TOTAL_THREADS)
     {
         int threadId = omp_get_thread_num();
-        int chunkSize = DATA_SIZE / TOTAL_THREADS;
 
         // DEBUG: Load Sharing Summary
+        // int chunkSize = DATA_SIZE / TOTAL_THREADS;
         // int actualCoverage = 0, totalLeftover = 0;
         // if (threadId == TOTAL_THREADS - 1) {
         //     actualCoverage = chunkSize * TOTAL_THREADS;
@@ -177,10 +178,12 @@ long parallelBucketSort(int dataSize) {
 
         // printf("\nThread #%d\tStart: %d\t End: %d\t Size: %d\n", threadId, start, end - 1, end - start);
 
+        // Calculate the range of number that the thread has to cover
         int bucketBinSize = (maximumElement - minimumElement + 1) / TOTAL_THREADS;
         int lowerBinCriteria = (threadId * bucketBinSize) + minimumElement;
         int upperBinCriteria = lowerBinCriteria + bucketBinSize - 1;
 
+        // If the thread is the last one
         if (threadId == TOTAL_THREADS - 1) {
             upperBinCriteria = maximumElement;
         }
@@ -210,7 +213,7 @@ long parallelBucketSort(int dataSize) {
         mergeSort(sliced, 0, slicingCount - 1);
 
         // Wait for all threads to finish
-        #pragma omp barrier
+#pragma omp barrier
         int actualStart = 0;
         if (threadId != 0) {
             for (int k = 0; k < threadId; ++k) {
@@ -240,9 +243,9 @@ long parallelBucketSort(int dataSize) {
         count += threadDataCount[i];
         printf("Thread %d\thas %d element(s)\n", i, threadDataCount[i]);
     }
-    printf("\n\nTotal Data Processed = %d out of %d\n", count, DATA_SIZE);
 
-    printf("\n-- PARALLEL BUCKET SORT DURATION --\n");
+    printf("\n-- PARALLEL BUCKET SORT SUMMARY --\n");
+    printf("Total Data Processed = %d out of %d\n", count, DATA_SIZE);
     printf("Time Elapsed = %lu Microseconds (%lf Seconds)\n", delta_us, time);
 
     // DEBUG: Write sorted array into sortedArray.txt
@@ -269,15 +272,21 @@ long parallelBucketSort(int dataSize) {
  * @param dataSize  the size of the data array
  * @return          the amount of time taken to sort the number
  */
-long sequentialBucketSort(int dataSize) {
+long sequentialBucketSort(int dataSize, int totalBucket) {
     // DEBUG: Initialize the timer
     struct timespec timeStampStop, timeStampStart;
 
     int DATA_SIZE = dataSize;
     int *data = malloc(sizeof(int) * DATA_SIZE);
+    int *sortedData = malloc(sizeof(int) * DATA_SIZE);
 
-    int BUCKET_AMOUNT = 16;
-    int BUCKET_SIZE = dataSize / BUCKET_AMOUNT;
+    int BUCKET_AMOUNT = totalBucket;
+
+    // Populate counters of all buckets with 0
+    int bucketDataCount[BUCKET_AMOUNT];
+    for (int k = 0; k < BUCKET_AMOUNT; k++) {
+        bucketDataCount[k] = 0;
+    }
 
     generateRandomNumberArray(data, DATA_SIZE);
 
@@ -285,8 +294,57 @@ long sequentialBucketSort(int dataSize) {
     clock_gettime(CLOCK_MONOTONIC_RAW, &timeStampStart);
     double start_time = omp_get_wtime();
 
-    // TODO: Implement Bucket Sort in Sequential
-    // mergeSort(data, 0, DATA_SIZE - 1);
+    // Find the Minimum and Maximum value of the data
+    int i = 0, minimumElement = 99999999, maximumElement = -99999999, j;
+    for (i = 0; i < DATA_SIZE; i++) {
+        if (data[i] < minimumElement) {
+            minimumElement = data[i];
+        }
+
+        if (data[i] > maximumElement) {
+            maximumElement = data[i];
+        }
+    }
+
+    int sortedArrayLastElementPointer = 0;
+    for (int bucketId = 0; bucketId < BUCKET_AMOUNT; bucketId++) {
+
+        // Calculate the range of number that the bucket has to cover
+        int bucketBinSize = (maximumElement - minimumElement + 1) / BUCKET_AMOUNT;
+        int lowerBinCriteria = (bucketId * bucketBinSize) + minimumElement;
+        int upperBinCriteria = lowerBinCriteria + bucketBinSize - 1;
+
+        // If the thread is the last one
+        if (bucketId == BUCKET_AMOUNT - 1) {
+            upperBinCriteria = maximumElement;
+        }
+
+        // Counts the amount of data that the thread has to handle
+        // To prepare an array with the size of number count
+        for (j = 0; j < DATA_SIZE; j++) {
+            // If the number is in the bin range, count it up.
+            if (data[j] >= lowerBinCriteria && data[j] <= upperBinCriteria) {
+                bucketDataCount[bucketId] += 1;
+            }
+        }
+
+        // Add number to its own private array
+        int slicingCount = 0;
+        int sliced[bucketDataCount[bucketId]];
+        for (j = 0; j < DATA_SIZE; j++) {
+            if (data[j] >= lowerBinCriteria && data[j] <= upperBinCriteria) {
+                sliced[slicingCount++] = data[j];
+            }
+        }
+
+        // Initialize sequential sorting algorithm
+        mergeSort(sliced, 0, slicingCount - 1);
+
+        for (int k = 0; k < bucketDataCount[bucketId]; k++) {
+            sortedData[sortedArrayLastElementPointer++] = sliced[k];
+            // printf("Sorted %d\t\t= %d\n", sortedArrayLastElementPointer - 1, sortedData[sortedArrayLastElementPointer - 1]);
+        }
+    }
 
     // DEBUG: Mark the ending time
     clock_gettime(CLOCK_MONOTONIC_RAW, &timeStampStop);
@@ -294,26 +352,29 @@ long sequentialBucketSort(int dataSize) {
     uint64_t delta_us = (timeStampStop.tv_sec - timeStampStart.tv_sec) * 1000000 +
                         (timeStampStop.tv_nsec - timeStampStart.tv_nsec) / 1000;
 
-    printf("\n-- SEQUENTIAL BUCKET SORT DURATION --\n");
+    printf("\n-- SEQUENTIAL BUCKET SORT SUMMARY --\n");
+    printf("Total Data Processed = %d out of %d\n", sortedArrayLastElementPointer, DATA_SIZE);
     printf("Time Elapsed = %lu Microseconds (%lf Seconds)\n", delta_us, time);
     return delta_us;
 }
 
 int main() {
     // Maximum supported data size when not running sequential sorting
-    // int DATA_SIZE = 15000000;
+    int DATA_SIZE = 15000000;
+    // int DATA_SIZE = 2000000;
+    // int DATA_SIZE = 100;
 
-    // FIXME: Fix the bug where sequential sort could not be processed when data size is set to 15,000,000 elements
-    int DATA_SIZE = 2000000;
-    long parallelBucketSortTime = parallelBucketSort(DATA_SIZE);
-    long sequentialBucketSortTime = sequentialBucketSort(DATA_SIZE);
+    int TOTAL_BUCKET = 16;
+    long parallelBucketSortTime = parallelBucketSort(DATA_SIZE, TOTAL_BUCKET);
+    long sequentialBucketSortTime = sequentialBucketSort(DATA_SIZE, TOTAL_BUCKET);
 
     printf("\n----- Duration Summary ----- \n");
     printf("Parallel Time:\t\t%lu Microseconds\n", parallelBucketSortTime);
     printf("Sequential Time:\t%lu Microseconds\n", sequentialBucketSortTime);
 
     long difference = sequentialBucketSortTime - parallelBucketSortTime;
-    printf("* Difference:\t\t%ld Microseconds\n", difference);
+    double ratio = (double) sequentialBucketSortTime / (double) parallelBucketSortTime;
+    printf("* Difference:\t\t%ld Microseconds (Parallel ver. is %.2fx faster)\n", difference, ratio);
 
     return 0;
 }
