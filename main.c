@@ -123,7 +123,7 @@ long parallelBucketSort(int dataSize, int totalBucket) {
     // Write the generated numbers to originalArray.txt
     FILE *originalArrayFile;
     originalArrayFile = fopen("originalArray.txt", "w");
-    for (int m = 0; m < DATA_SIZE; ++m) {
+    for (int m = 0; m < DATA_SIZE; m++) {
         fprintf(originalArrayFile, "%d\n", data[m]);
     }
     fclose(originalArrayFile);
@@ -140,7 +140,7 @@ long parallelBucketSort(int dataSize, int totalBucket) {
 
     // Find the Minimum value of the data in parallel
     int minimumElement = 99999999;
-#pragma omp parallel for reduction(min:minimumElement) default(none) shared(DATA_SIZE, data) num_threads(TOTAL_THREADS)
+    #pragma omp parallel for reduction(min:minimumElement) default(none) shared(DATA_SIZE, data) num_threads(TOTAL_THREADS)
     for (i = 0; i < DATA_SIZE; i++) {
         if (data[i] < minimumElement) {
             minimumElement = data[i];
@@ -149,7 +149,7 @@ long parallelBucketSort(int dataSize, int totalBucket) {
 
     // Find the Maximum value of the data in parallel
     int maximumElement = -99999999;
-#pragma omp parallel for reduction(max:maximumElement) default(none) shared(DATA_SIZE, data) num_threads(TOTAL_THREADS)
+    #pragma omp parallel for reduction(max:maximumElement) default(none) shared(DATA_SIZE, data) num_threads(TOTAL_THREADS)
     for (i = 0; i < DATA_SIZE; i++) {
         if (data[i] > maximumElement) {
             maximumElement = data[i];
@@ -161,7 +161,7 @@ long parallelBucketSort(int dataSize, int totalBucket) {
     // printf("Maximum Element = %d\n", maximumElement);
 
     // Enters the Main Parallel block with shared data array and thread data counter array
-#pragma omp parallel default(none) private(i, j) shared(DATA_SIZE, data, threadDataCount, TOTAL_THREADS, minimumElement, maximumElement) num_threads(TOTAL_THREADS)
+    #pragma omp parallel default(none) private(i, j) shared(DATA_SIZE, data, threadDataCount, TOTAL_THREADS, minimumElement, maximumElement) num_threads(TOTAL_THREADS)
     {
         int threadId = omp_get_thread_num();
 
@@ -213,7 +213,7 @@ long parallelBucketSort(int dataSize, int totalBucket) {
         mergeSort(sliced, 0, slicingCount - 1);
 
         // Wait for all threads to finish
-#pragma omp barrier
+        #pragma omp barrier
         int actualStart = 0;
         if (threadId != 0) {
             for (int k = 0; k < threadId; ++k) {
@@ -361,8 +361,9 @@ long sequentialBucketSort(int dataSize, int totalBucket) {
 int main() {
     // Maximum supported data size when not running sequential sorting
     int DATA_SIZE = 15000000;
+    // int DATA_SIZE = 10000000;
     // int DATA_SIZE = 2000000;
-    // int DATA_SIZE = 100;
+    // int DATA_SIZE = 6000000;
 
     int TOTAL_BUCKET = 16;
     long parallelBucketSortTime = parallelBucketSort(DATA_SIZE, TOTAL_BUCKET);
